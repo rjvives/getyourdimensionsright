@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Measure Mapper · MVP v3</title>
+  <title>Measure Mapper · MVP v3 (Auto Zoom)</title>
   <style>
     :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
     * { box-sizing: border-box; }
@@ -24,7 +24,7 @@
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid #0a132b; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
     input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid #0a132b; }
 
-    .value-pill { min-width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
+    .value-pill { min-width: 160px; text-align: right; font-variant-numeric: tabular-nums; }
     .value-pill b { font-size: 18px; }
     .muted { color: var(--muted); }
 
@@ -35,12 +35,12 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Measure Mapper <span class="small muted">MVP v3</span></h1>
-    <p class="lead">Now the slider <b>auto-scales based on real-world ranges</b>. Switch type and unit to see context-appropriate ranges.</p>
+    <h1>Measure Mapper <span class="small muted">MVP v3 – Auto Zoom</span></h1>
+    <p class="lead">One measurement type at a time. Pick type & unit, then drag the slider. Choose a <b>Zoom</b> preset or use <b>Auto</b> (the slider window adapts to your value and expands when you hit the edges).</p>
 
-    <!-- CONTROLS: TYPE & UNIT -->
+    <!-- CONTROLS: TYPE, UNIT, ZOOM -->
     <section class="card" style="margin-bottom:16px;">
-      <div class="row">
+      <div class="row" style="margin-bottom:10px;">
         <div>
           <label>Measurement type</label>
           <select id="typeSelect">
@@ -53,6 +53,10 @@
           <label>Unit</label>
           <select id="unitSelect"></select>
         </div>
+        <div>
+          <label>Zoom</label>
+          <select id="zoomSelect"></select>
+        </div>
       </div>
       <div class="hr"></div>
       <div>
@@ -61,6 +65,7 @@
           <input id="valueSlider" type="range" min="0" max="100" step="1" value="30" />
           <div class="value-pill"><b id="valueReadout">30</b> <span id="unitReadout">km²</span></div>
         </div>
+        <div class="small muted" id="rangeReadout" style="margin-top:6px;"></div>
       </div>
     </section>
 
@@ -73,21 +78,27 @@
   </div>
 
   <script>
+    // --- CONSTANTS ---
     const K = {
+      // Areas in m^2
       KM2: 1_000_000,
       MI2_TO_M2: 2_589_988.110336,
       HECTARE: 10_000,
+      // Lengths in m
       KM: 1_000,
       MI_TO_M: 1609.344,
+      // Flow
       L_TO_M3: 1/1000,
       FT3_TO_M3: 0.028316846592,
     };
 
+    // --- COMPARISONS LIBRARY ---
     const comparisons = {
       area: [
         { id:"soccer_pitch", label:"soccer pitches", area_m2: 105*68, note:"FIFA ~105×68 m" },
         { id:"central_park", label:"Central Parks (NYC)", area_m2: 3.41*K.KM2 },
         { id:"cologne_oldtown", label:"Cologne Old Towns", area_m2: 1.5*K.KM2, approx:true },
+        { id:"tennis_court", label:"tennis courts", area_m2: 23.77*10.97 },
       ],
       flow: [
         { id:"bathtub", label:"bathtubs / s", volume_m3: 0.150 },
@@ -101,38 +112,94 @@
       ]
     };
 
-    // Typical ranges for auto-scaling sliders
+    // Rivers referenced every 500 m³/s. Add as many as you like.
+    // tip: use Wikimedia 'Special:FilePath/<FileName>?width=800' for stable hotlinks
+    const flowRivers = [
+      { name: 'Ebro (ES)', img: 'https://commons.wikimedia.org/wiki/Special:FilePath/Ebro%20River.jpg?width=800' },
+      { name: 'Po (IT)', img: '' },
+      { name: 'Ródano / Rhône (FR-CH)', img: '' },
+      { name: 'Nilo (EG-SD)', img: '' },
+      { name: 'Rin / Rhine (CH-DE-NL)', img: '' },
+      { name: 'Danubio (EU)', img: '' },
+      { name: 'Volga (RU)', img: '' },
+      { name: 'Misisipi (US)', img: '' },
+      { name: 'Yangtsé (CN)', img: '' },
+      { name: 'Mekong (SEA)', img: '' },
+      { name: 'Ganges (IN)', img: '' },
+      { name: 'Congo (CD-CG)', img: '' },
+      { name: 'Amazonas (BR-PE-CO)', img: '' },
+    ];
+
+    // --- UNIT & ZOOM CATALOGS ---
     const unitCfg = {
       area: {
         units: [
-          { id:'km2', label:'km²', toM2:v=>v*K.KM2, fromM2:v=>v/K.KM2, typical:[0,5000] }, // up to region size
-          { id:'ha', label:'hectares', toM2:v=>v*K.HECTARE, fromM2:v=>v/K.HECTARE, typical:[0,200000] },
-          { id:'m2', label:'m²', toM2:v=>v, fromM2:v=>v, typical:[0,10_000_000] },
-          { id:'mi2', label:'mi²', toM2:v=>v*K.MI2_TO_M2, fromM2:v=>v/K.MI2_TO_M2, typical:[0,2000] },
+          { id:'km2', label:'km²', toBase:v=>v*K.KM2, fromBase:v=>v/K.KM2 },
+          { id:'ha', label:'hectares', toBase:v=>v*K.HECTARE, fromBase:v=>v/K.HECTARE },
+          { id:'m2', label:'m²', toBase:v=>v, fromBase:v=>v },
+          { id:'mi2', label:'mi²', toBase:v=>v*K.MI2_TO_M2, fromBase:v=>v/K.MI2_TO_M2 },
         ],
-        examples:"Soccer pitch ~0.007 km², Central Park ~3.41 km²",
+        // Presets in BASE (m²)
+        zooms: [
+          { id:'auto', label:'Auto', kind:'auto' },
+          { id:'tiny', label:'Room / Field', min:500, max:50_000 },             // 0.0005–0.05 km²
+          { id:'local', label:'Neighborhood', min:50_000, max:5_000_000 },      // 0.05–5 km²
+          { id:'city', label:'City / Metro', min:5_000_000, max:500_000_000 },  // 5–500 km²
+          { id:'region', label:'Region', min:500_000_000, max:50_000_000_000 }, // 500–50,000 km²
+        ],
+        examples:"Soccer pitch ~0.00714 km², Central Park ~3.41 km²",
       },
       flow: {
         units: [
-          { id:'m3s', label:'m³/s', toM3s:v=>v, fromM3s:v=>v, typical:[0,20000] }, // large rivers like Amazon ~200,000 m³/s
-          { id:'ls', label:'L/s', toM3s:v=>v*K.L_TO_M3, fromM3s:v=>v/K.L_TO_M3, typical:[0,2_000_000] },
-          { id:'ft3s', label:'ft³/s', toM3s:v=>v*K.FT3_TO_M3, fromM3s:v=>v/K.FT3_TO_M3, typical:[0,700000] },
+          { id:'m3s', label:'m³/s', toBase:v=>v, fromBase:v=>v },
+          { id:'ls', label:'L/s', toBase:v=>v*K.L_TO_M3, fromBase:v=>v/K.L_TO_M3 },
+          { id:'ft3s', label:'ft³/s', toBase:v=>v*K.FT3_TO_M3, fromBase:v=>v/K.FT3_TO_M3 },
+        ],
+        // Presets in BASE (m³/s)
+        zooms: [
+          { id:'auto', label:'Auto', kind:'auto' },
+          { id:'trickle', label:'Hose / Small Creek', min:0.1, max:5 },
+          { id:'river', label:'River', min:5, max:5_000 },
+          { id:'flood', label:'Flood / Large River', min:5_000, max:200_000 },
         ],
         examples:"Bathtub ~150 L, Garden hose ~15 L/min, Olympic pool ~2,500 m³",
       },
       length: {
         units: [
-          { id:'km', label:'km', toM:v=>v*K.KM, fromM:v=>v/K.KM, typical:[0,20000] }, // Earth scale
-          { id:'m', label:'m', toM:v=>v, fromM:v=>v, typical:[0,2_000_000] },
-          { id:'mi', label:'miles', toM:v=>v*K.MI_TO_M, fromM:v=>v/K.MI_TO_M, typical:[0,12000] },
+          { id:'km', label:'km', toBase:v=>v*K.KM, fromBase:v=>v/K.KM },
+          { id:'m', label:'m', toBase:v=>v, fromBase:v=>v },
+          { id:'mi', label:'miles', toBase:v=>v*K.MI_TO_M, fromBase:v=>v/K.MI_TO_M },
+        ],
+        // Presets in BASE (m)
+        zooms: [
+          { id:'auto', label:'Auto', kind:'auto' },
+          { id:'street', label:'Street / Campus', min:10, max:5_000 },
+          { id:'city', label:'City Scale', min:5_000, max:200_000 },
+          { id:'regional', label:'Regional', min:200_000, max:5_000_000 },
         ],
         examples:"Marathon 42.195 km, Cologne Cathedral 157 m",
       }
     };
 
-    let state = { type: 'area', unit: 'km2', value: 30 };
+    // --- STATE ---
+    let state = {
+      type: 'area',
+      unit: 'km2',
+      zoom: 'auto',
+      value: 30, // in current unit
+    };
 
+    // --- HELPERS ---
     const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+
+    function niceStep(x){
+      // Round x to 1/2/5 * 10^k
+      if(x <= 0) return 1;
+      const k = Math.floor(Math.log10(x));
+      const base = x / Math.pow(10, k);
+      const m = base <= 1 ? 1 : base <= 2 ? 2 : base <= 5 ? 5 : 10;
+      return m * Math.pow(10, k);
+    }
 
     function populateUnits(){
       const uSel = document.getElementById('unitSelect');
@@ -144,19 +211,63 @@
       }
     }
 
+    function populateZooms(){
+      const zSel = document.getElementById('zoomSelect');
+      zSel.innerHTML = '';
+      for(const z of unitCfg[state.type].zooms){
+        const opt = document.createElement('option');
+        opt.value = z.id; opt.textContent = z.label; if(z.id === state.zoom) opt.selected = true;
+        zSel.appendChild(opt);
+      }
+    }
+
     function applySliderPreset(){
-      const cfg = unitCfg[state.type].units.find(u=>u.id===state.unit);
+      const cfgUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
       const slider = document.getElementById('valueSlider');
-      const [min,max] = cfg.typical;
-      slider.min = min; slider.max = max; slider.step = (max-min)/200; // ~200 steps
-      if(state.value < min || state.value > max){ state.value = (min+max)/20; }
+      const z = state.zoom || 'auto';
+      const zoomList = unitCfg[state.type].zooms;
+      const preset = zoomList.find(p=>p.id===z) || zoomList[0];
+
+      const baseNow = cfgUnit.toBase(state.value ?? 1);
+      function autoWindow(baseVal){
+        const v = Math.max(baseVal, 1e-9);
+        const exp = Math.floor(Math.log10(v));
+        const low = Math.pow(10, exp-1);
+        const high = Math.pow(10, exp+1);
+        return {min: low, max: high};
+      }
+
+      let baseMin, baseMax;
+      if(preset.kind === 'auto'){
+        const w = autoWindow(baseNow);
+        baseMin = w.min; baseMax = w.max;
+      } else {
+        baseMin = preset.min; baseMax = preset.max;
+        if(baseNow < baseMin) baseMin = Math.max(baseNow*0.5, 0);
+        if(baseNow > baseMax) baseMax = baseNow*2;
+      }
+
+      const unitMin = cfgUnit.fromBase(baseMin);
+      const unitMax = cfgUnit.fromBase(baseMax);
+      const step = niceStep((unitMax - unitMin) / 200);
+
+      slider.min = unitMin;
+      slider.max = unitMax;
+      slider.step = step;
+
+      if(state.value === null || state.value === undefined){
+        state.value = unitMin + (unitMax - unitMin) * 0.25;
+      }
+      // Clamp to range
+      state.value = Math.min(unitMax, Math.max(unitMin, state.value));
       slider.value = state.value;
+
       document.getElementById('valueReadout').textContent = fmt(state.value);
-      document.getElementById('unitReadout').textContent = cfg.label;
+      document.getElementById('unitReadout').textContent = cfgUnit.label;
+      document.getElementById('rangeReadout').textContent = `Range → ${fmt(unitMin)} – ${fmt(unitMax)} ${cfgUnit.label} (step ${fmt(step)})`;
     }
 
     function render(){
-      // Compute base values and render comparisons
       const res = [];
       const cfgUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
 
@@ -168,6 +279,7 @@
       }
       if(state.type === 'flow'){
         const m3s = cfgUnit.toBase(state.value);
+        // comparisons
         for(const c of comparisons.flow){
           if(c.timeScale === 'min'){
             const perMin = m3s*60 / c.volume_m3; res.push(`≈ <b>${fmt(perMin)}</b> ${c.label}`);
@@ -175,6 +287,22 @@
             const perSec = m3s / c.volume_m3; res.push(`≈ <b>${fmt(perSec)}</b> ${c.label}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
           }
         }
+        // river at each 500 m³/s step
+        const idx = Math.max(0, Math.floor(m3s / 500) - 1);
+        const river = flowRivers[idx % flowRivers.length];
+        const riverHtml = `
+          <div class=\"hr\"></div>
+          <div class=\"small muted\">Referencia de caudal (cada 500 m³/s):</div>
+          <div style=\"display:flex; gap:12px; align-items:center; margin-top:8px;\">
+            <div style=\"width:120px; height:72px; overflow:hidden; border-radius:10px; background:#0b213d; border:1px solid #1f365c; flex:0 0 120px; display:flex; align-items:center; justify-content:center;\">
+              ${river.img ? `<img src='${river.img}' alt='${river.name}' style='width:100%; height:100%; object-fit:cover;'/>` : `<span class=\"small muted\">(agrega imagen)</span>`}
+            </div>
+            <div>
+              <div><b>${river.name}</b></div>
+              <div class=\"small muted\">Índice ${idx+1} — ${(Math.floor(m3s/500))*500} m³/s</div>
+            </div>
+          </div>`;
+        res.push(riverHtml);
       }
       if(state.type === 'length'){
         const m = cfgUnit.toBase(state.value);
@@ -186,62 +314,92 @@
       document.getElementById('resultBox').innerHTML = res.map(r=>`<div>${r}</div>`).join('');
       document.getElementById('examplesNote').textContent = unitCfg[state.type].examples;
       document.getElementById('resultHeading').textContent = `Comparisons for ${state.type} at ${fmt(state.value)} ${document.getElementById('unitReadout').textContent}`;
-    }</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
-        }
-      }
-      if(state.type === 'flow'){
-        const toM3s = unitCfg.flow.units.find(u=>u.id===state.unit).toM3s;
-        const m3s = toM3s(state.value);
-        for(const c of comparisons.flow){
-          if(c.timeScale === 'min'){
-            const perMin = m3s*60 / c.volume_m3; res.push(`≈ <b>${fmt(perMin)}</b> ${c.label}`);
-          } else {
-            const perSec = m3s / c.volume_m3; res.push(`≈ <b>${fmt(perSec)}</b> ${c.label}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
-          }
-        }
-      }
-      if(state.type === 'length'){
-        const toM = unitCfg.length.units.find(u=>u.id===state.unit).toM;
-        const m = toM(state.value);
-        for(const c of comparisons.length){
-          const n = m / c.length_m; res.push(`≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}`);
-        }
-      }
-
-      document.getElementById('resultBox').innerHTML = res.map(r=>`<div>${r}</div>`).join('');
-      document.getElementById('examplesNote').textContent = unitCfg[state.type].examples;
-      document.getElementById('resultHeading').textContent = `Comparisons for ${state.type} at ${fmt(state.value)} ${document.getElementById('unitReadout').textContent}`;
     }
 
+    // --- EVENT WIRING ---
     const typeSelect = document.getElementById('typeSelect');
     const unitSelect = document.getElementById('unitSelect');
+    const zoomSelect = document.getElementById('zoomSelect');
     const slider = document.getElementById('valueSlider');
 
     typeSelect.addEventListener('change', () => {
+      // preserve base value if switching types? We'll just reset to a sensible seed.
       state.type = typeSelect.value;
       state.unit = unitCfg[state.type].units[0].id;
-      state.value = null;
+      state.zoom = 'auto';
+      state.value = unitCfg[state.type].units[0].fromBase(1); // seed ~1 in base
       populateUnits();
+      populateZooms();
       applySliderPreset();
       render();
     });
 
     unitSelect.addEventListener('change', () => {
+      // keep same base value across unit switches
+      const oldUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
+      const baseVal = oldUnit.toBase(state.value);
       state.unit = unitSelect.value;
-      state.value = null;
+      const newUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
+      state.value = newUnit.fromBase(baseVal);
+      applySliderPreset();
+      render();
+    });
+
+    zoomSelect.addEventListener('change', () => {
+      state.zoom = zoomSelect.value;
       applySliderPreset();
       render();
     });
 
     slider.addEventListener('input', () => {
-      state.value = parseFloat(slider.value);
+      const min = parseFloat(slider.min);
+      const max = parseFloat(slider.max);
+      const val = parseFloat(slider.value);
+      state.value = val;
+
+      // Auto expand when near edges (only in Auto zoom)
+      if(state.zoom === 'auto'){
+        const span = max - min;
+        const lowThresh = min + 0.02 * span;
+        const highThresh = max - 0.02 * span;
+        const cfgUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
+        let expanded = false;
+        if(val <= lowThresh){
+          const baseCenter = cfgUnit.toBase(val);
+          const newMinBase = baseCenter / 100;
+          const newMaxBase = baseCenter * 10;
+          const newMin = cfgUnit.fromBase(newMinBase);
+          const newMax = cfgUnit.fromBase(newMaxBase);
+          slider.min = newMin; slider.max = newMax;
+          expanded = true;
+        } else if(val >= highThresh){
+          const baseCenter = cfgUnit.toBase(val);
+          const newMinBase = baseCenter / 10;
+          const newMaxBase = baseCenter * 100;
+          const newMin = cfgUnit.fromBase(newMinBase);
+          const newMax = cfgUnit.fromBase(newMaxBase);
+          slider.min = newMin; slider.max = newMax;
+          expanded = true;
+        }
+        if(expanded){
+          const step = niceStep((parseFloat(slider.max) - parseFloat(slider.min)) / 200);
+          slider.step = step;
+          document.getElementById('rangeReadout').textContent = `Range → ${fmt(parseFloat(slider.min))} – ${fmt(parseFloat(slider.max))} ${document.getElementById('unitReadout').textContent} (step ${fmt(step)})`;
+        }
+      }
+
       document.getElementById('valueReadout').textContent = fmt(state.value);
       render();
     });
 
-    populateUnits();
-    applySliderPreset();
-    render();
+    // --- INIT ---
+    function init(){
+      populateUnits();
+      populateZooms();
+      applySliderPreset();
+      render();
+    }
+    init();
   </script>
 </body>
 </html>
