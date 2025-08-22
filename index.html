@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Measure Mapper · MVP</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg,#0b1020,#0d1630); color: var(--ink); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 8px; letter-spacing: -0.02em; }
+    p.lead { color: var(--muted); margin: 0 0 28px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap: 18px; }
+    .card { background: linear-gradient(180deg,#111a34,#0e1730); border: 1px solid #1f2a4a; border-radius: 16px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .card h2 { font-size: 18px; margin: 0 0 8px; color: var(--accent); }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input, select { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid #2a375f; background: #0c1530; color: var(--ink); outline: none; }
+    input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(110,231,255,.15); }
+    .result { margin-top: 12px; font-size: 14px; line-height: 1.45; }
+    .pill { display:inline-block; padding: 6px 10px; border-radius: 999px; background:#0b213d; border:1px solid #1f365c; font-size:12px; color:#b5c7eb; margin-right:6px; }
+    .examples { margin-top: 10px; display:flex; flex-wrap: wrap; gap:8px; }
+    .muted { color: var(--muted); }
+    .footer { margin-top: 40px; font-size: 13px; color: var(--muted); }
+    .row { display:flex; gap:10px; }
+    .row > * { flex: 1; }
+    .hr { height: 1px; background: #1f2a4a; margin: 16px 0; border: 0; }
+    .small { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Measure Mapper <span class="pill">MVP</span></h1>
+    <p class="lead">Type a measurement and instantly get human-friendly comparisons (football fields, Olympic pools, garden hoses, city blocks, etc.).
+      This is a tiny starter you can publish on GitHub Pages and expand with photos, videos, or animations.</p>
+
+    <div class="grid">
+      <!-- AREA CARD -->
+      <section class="card" id="areaCard">
+        <h2>Area</h2>
+        <div class="row">
+          <div>
+            <label>Value</label>
+            <input id="areaValue" type="number" min="0" step="any" placeholder="e.g. 30" value="30" />
+          </div>
+          <div>
+            <label>Unit</label>
+            <select id="areaUnit">
+              <option value="km2" selected>km²</option>
+              <option value="m2">m²</option>
+              <option value="ha">hectares</option>
+              <option value="mi2">square miles</option>
+            </select>
+          </div>
+        </div>
+        <div class="result" id="areaResult"></div>
+        <div class="examples small muted">Examples used: Soccer pitch ~ <span id="pitchArea">0.00714 km²</span>, Central Park ~ 3.41 km², Cologne Old Town ~ ~1.5 km² (approx).</div>
+      </section>
+
+      <!-- FLOW CARD -->
+      <section class="card" id="flowCard">
+        <h2>Flow / Discharge</h2>
+        <div class="row">
+          <div>
+            <label>Value</label>
+            <input id="flowValue" type="number" min="0" step="any" placeholder="e.g. 100" value="100" />
+          </div>
+          <div>
+            <label>Unit</label>
+            <select id="flowUnit">
+              <option value="m3s" selected>m³/s</option>
+              <option value="ls">L/s</option>
+              <option value="ft3s">ft³/s</option>
+            </select>
+          </div>
+        </div>
+        <div class="result" id="flowResult"></div>
+        <div class="examples small muted">Examples used: Bathtub ~150 L, Garden hose ~ 15 L/min, Olympic pool ~ 2,500 m³.</div>
+      </section>
+
+      <!-- LENGTH CARD -->
+      <section class="card" id="lengthCard">
+        <h2>Length / Distance</h2>
+        <div class="row">
+          <div>
+            <label>Value</label>
+            <input id="lengthValue" type="number" min="0" step="any" placeholder="e.g. 12" value="12" />
+          </div>
+          <div>
+            <label>Unit</label>
+            <select id="lengthUnit">
+              <option value="km" selected>km</option>
+              <option value="m">m</option>
+              <option value="mi">miles</option>
+            </select>
+          </div>
+        </div>
+        <div class="result" id="lengthResult"></div>
+        <div class="examples small muted">Examples used: Marathon 42.195 km, Cologne Cathedral height 157 m, City block ~100 m (varies).</div>
+      </section>
+    </div>
+
+    <p class="footer">This is a beginner-friendly starter. All math is done in the browser (no backend). You can extend the <span class="muted">comparisons[]</span> list in the script to add your own photos, videos, or animations later.</p>
+  </div>
+
+  <script>
+    // --- CONSTANTS & COMPARISON LIBRARY ---
+    const K = {
+      // Areas in m^2
+      KM2: 1_000_000,
+      MI2_TO_M2: 2_589_988.110336,
+      HECTARE: 10_000,
+      // Lengths in m
+      KM: 1_000,
+      MI_TO_M: 1609.344,
+      // Flow
+      M3S: 1, // base
+      L_TO_M3: 1/1000,
+      FT3_TO_M3: 0.028316846592,
+    };
+
+    const comparisons = {
+      area: [
+        { id:"soccer_pitch", label:"soccer pitches", area_m2: 105*68, note:"FIFA standard ~105×68 m" },
+        { id:"central_park", label:"Central Parks (NYC)", area_m2: 3.41*K.KM2 },
+        { id:"cologne_oldtown", label:"Cologne Old Towns", area_m2: 1.5*K.KM2, approx:true },
+        { id:"tennis_court", label:"tennis courts", area_m2: 23.77*10.97 },
+      ],
+      flow: [
+        { id:"bathtub", label:"bathtubs / s", volume_m3: 0.150 },
+        { id:"olympic_pool", label:"Olympic pools / min", volume_m3: 2500, timeScale:"min" },
+        { id:"garden_hose", label:"garden hoses / s", volume_m3: 15*K.L_TO_M3/60, note:"~15 L/min" },
+      ],
+      length: [
+        { id:"marathon", label:"marathons", length_m: 42195 },
+        { id:"cologne_cathedral", label:"Cologne Cathedral heights", length_m: 157 },
+        { id:"city_block", label:"city blocks", length_m: 100, approx:true },
+      ]
+    };
+
+    // --- HELPERS ---
+    const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+
+    // Area conversions to m^2
+    function toM2(value, unit){
+      switch(unit){
+        case 'km2': return value * K.KM2;
+        case 'm2': return value;
+        case 'ha': return value * K.HECTARE;
+        case 'mi2': return value * K.MI2_TO_M2;
+        default: return NaN;
+      }
+    }
+
+    // Flow conversions to m^3/s
+    function toM3s(value, unit){
+      switch(unit){
+        case 'm3s': return value;
+        case 'ls': return value * K.L_TO_M3; // L/s -> m^3/s
+        case 'ft3s': return value * K.FT3_TO_M3; // ft^3/s -> m^3/s
+        default: return NaN;
+      }
+    }
+
+    // Length conversions to meters
+    function toMeters(value, unit){
+      switch(unit){
+        case 'km': return value * K.KM;
+        case 'm': return value;
+        case 'mi': return value * K.MI_TO_M;
+        default: return NaN;
+      }
+    }
+
+    // --- RENDERERS ---
+    function renderArea(){
+      const v = parseFloat(document.getElementById('areaValue').value || '0');
+      const u = document.getElementById('areaUnit').value;
+      const m2 = toM2(v, u);
+      const parts = comparisons.area.map(c => {
+        const n = m2 / c.area_m2; // count of the object
+        return `<div>≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class="small muted">(approx)</span>':''}${c.note? ` <span class="small muted">— ${c.note}</span>`:''}</div>`;
+      });
+      document.getElementById('areaResult').innerHTML = parts.join('');
+    }
+
+    function renderFlow(){
+      const v = parseFloat(document.getElementById('flowValue').value || '0');
+      const u = document.getElementById('flowUnit').value;
+      const m3s = toM3s(v, u);
+      const parts = comparisons.flow.map(c => {
+        if(c.timeScale === 'min'){
+          const perMin = m3s*60 / c.volume_m3;
+          return `<div>≈ <b>${fmt(perMin)}</b> ${c.label}</div>`;
+        }
+        const perSec = m3s / c.volume_m3;
+        return `<div>≈ <b>${fmt(perSec)}</b> ${c.label}${c.note? ` <span class="small muted">— ${c.note}</span>`:''}</div>`;
+      });
+      document.getElementById('flowResult').innerHTML = parts.join('');
+    }
+
+    function renderLength(){
+      const v = parseFloat(document.getElementById('lengthValue').value || '0');
+      const u = document.getElementById('lengthUnit').value;
+      const m = toMeters(v, u);
+      const parts = comparisons.length.map(c => {
+        const n = m / c.length_m;
+        return `<div>≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class="small muted">(approx)</span>':''}</div>`;
+      });
+      document.getElementById('lengthResult').innerHTML = parts.join('');
+    }
+
+    // --- INIT ---
+    ['areaValue','areaUnit'].forEach(id => document.getElementById(id).addEventListener('input', renderArea));
+    ['flowValue','flowUnit'].forEach(id => document.getElementById(id).addEventListener('input', renderFlow));
+    ['lengthValue','lengthUnit'].forEach(id => document.getElementById(id).addEventListener('input', renderLength));
+    renderArea(); renderFlow(); renderLength();
+  </script>
+</body>
+</html>
