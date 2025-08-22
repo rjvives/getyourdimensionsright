@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Measure Mapper · MVP v2</title>
+  <title>Measure Mapper · MVP v3</title>
   <style>
     :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
     * { box-sizing: border-box; }
@@ -35,8 +35,8 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Measure Mapper <span class="small muted">MVP v2</span></h1>
-    <p class="lead">Now showing <b>one measurement type at a time</b>. Pick a type, choose its unit, and drag the horizontal slider to set the value.</p>
+    <h1>Measure Mapper <span class="small muted">MVP v3</span></h1>
+    <p class="lead">Now the slider <b>auto-scales based on real-world ranges</b>. Switch type and unit to see context-appropriate ranges.</p>
 
     <!-- CONTROLS: TYPE & UNIT -->
     <section class="card" style="margin-bottom:16px;">
@@ -73,27 +73,21 @@
   </div>
 
   <script>
-    // --- CONSTANTS ---
     const K = {
-      // Areas in m^2
       KM2: 1_000_000,
       MI2_TO_M2: 2_589_988.110336,
       HECTARE: 10_000,
-      // Lengths in m
       KM: 1_000,
       MI_TO_M: 1609.344,
-      // Flow
       L_TO_M3: 1/1000,
       FT3_TO_M3: 0.028316846592,
     };
 
-    // --- LIBRARY ---
     const comparisons = {
       area: [
         { id:"soccer_pitch", label:"soccer pitches", area_m2: 105*68, note:"FIFA ~105×68 m" },
         { id:"central_park", label:"Central Parks (NYC)", area_m2: 3.41*K.KM2 },
         { id:"cologne_oldtown", label:"Cologne Old Towns", area_m2: 1.5*K.KM2, approx:true },
-        { id:"tennis_court", label:"tennis courts", area_m2: 23.77*10.97 },
       ],
       flow: [
         { id:"bathtub", label:"bathtubs / s", volume_m3: 0.150 },
@@ -107,43 +101,37 @@
       ]
     };
 
-    // Unit catalogs per type (label + to-base converters) and slider presets
+    // Typical ranges for auto-scaling sliders
     const unitCfg = {
       area: {
         units: [
-          { id:'km2', label:'km²', toM2:v=>v*K.KM2, fromM2:v=>v/K.KM2, slider:{min:0, max:1000, step:1, start:30} },
-          { id:'ha', label:'hectares', toM2:v=>v*K.HECTARE, fromM2:v=>v/K.HECTARE, slider:{min:0, max:100000, step:10, start:3000} },
-          { id:'m2', label:'m²', toM2:v=>v, fromM2:v=>v, slider:{min:0, max:5_000_000, step:1000, start:3_000_000} },
-          { id:'mi2', label:'mi²', toM2:v=>v*K.MI2_TO_M2, fromM2:v=>v/K.MI2_TO_M2, slider:{min:0, max:400, step:1, start:12} },
+          { id:'km2', label:'km²', toM2:v=>v*K.KM2, fromM2:v=>v/K.KM2, typical:[0,5000] }, // up to region size
+          { id:'ha', label:'hectares', toM2:v=>v*K.HECTARE, fromM2:v=>v/K.HECTARE, typical:[0,200000] },
+          { id:'m2', label:'m²', toM2:v=>v, fromM2:v=>v, typical:[0,10_000_000] },
+          { id:'mi2', label:'mi²', toM2:v=>v*K.MI2_TO_M2, fromM2:v=>v/K.MI2_TO_M2, typical:[0,2000] },
         ],
-        examples:"Soccer pitch ~0.00714 km², Central Park ~3.41 km²",
+        examples:"Soccer pitch ~0.007 km², Central Park ~3.41 km²",
       },
       flow: {
         units: [
-          { id:'m3s', label:'m³/s', toM3s:v=>v, fromM3s:v=>v, slider:{min:0, max:5000, step:1, start:100} },
-          { id:'ls', label:'L/s', toM3s:v=>v*K.L_TO_M3, fromM3s:v=>v/K.L_TO_M3, slider:{min:0, max:500000, step:10, start:100000} },
-          { id:'ft3s', label:'ft³/s', toM3s:v=>v*K.FT3_TO_M3, fromM3s:v=>v/K.FT3_TO_M3, slider:{min:0, max:200000, step:10, start:3500} },
+          { id:'m3s', label:'m³/s', toM3s:v=>v, fromM3s:v=>v, typical:[0,20000] }, // large rivers like Amazon ~200,000 m³/s
+          { id:'ls', label:'L/s', toM3s:v=>v*K.L_TO_M3, fromM3s:v=>v/K.L_TO_M3, typical:[0,2_000_000] },
+          { id:'ft3s', label:'ft³/s', toM3s:v=>v*K.FT3_TO_M3, fromM3s:v=>v/K.FT3_TO_M3, typical:[0,700000] },
         ],
         examples:"Bathtub ~150 L, Garden hose ~15 L/min, Olympic pool ~2,500 m³",
       },
       length: {
         units: [
-          { id:'km', label:'km', toM:v=>v*K.KM, fromM:v=>v/K.KM, slider:{min:0, max:1000, step:1, start:12} },
-          { id:'m', label:'m', toM:v=>v, fromM:v=>v, slider:{min:0, max:1_000_000, step:1, start:12000} },
-          { id:'mi', label:'miles', toM:v=>v*K.MI_TO_M, fromM:v=>v/K.MI_TO_M, slider:{min:0, max:600, step:1, start:7} },
+          { id:'km', label:'km', toM:v=>v*K.KM, fromM:v=>v/K.KM, typical:[0,20000] }, // Earth scale
+          { id:'m', label:'m', toM:v=>v, fromM:v=>v, typical:[0,2_000_000] },
+          { id:'mi', label:'miles', toM:v=>v*K.MI_TO_M, fromM:v=>v/K.MI_TO_M, typical:[0,12000] },
         ],
         examples:"Marathon 42.195 km, Cologne Cathedral 157 m",
       }
     };
 
-    // --- STATE ---
-    let state = {
-      type: 'area',
-      unit: 'km2',
-      value: 30, // in currently selected unit
-    };
+    let state = { type: 'area', unit: 'km2', value: 30 };
 
-    // --- HELPERS ---
     const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
 
     function populateUnits(){
@@ -159,8 +147,9 @@
     function applySliderPreset(){
       const cfg = unitCfg[state.type].units.find(u=>u.id===state.unit);
       const slider = document.getElementById('valueSlider');
-      slider.min = cfg.slider.min; slider.max = cfg.slider.max; slider.step = cfg.slider.step;
-      if(state.value === null || state.value === undefined){ state.value = cfg.slider.start; }
+      const [min,max] = cfg.typical;
+      slider.min = min; slider.max = max; slider.step = (max-min)/200; // ~200 steps
+      if(state.value < min || state.value > max){ state.value = (min+max)/20; }
       slider.value = state.value;
       document.getElementById('valueReadout').textContent = fmt(state.value);
       document.getElementById('unitReadout').textContent = cfg.label;
@@ -169,15 +158,39 @@
     function render(){
       // Compute base values and render comparisons
       const res = [];
+      const cfgUnit = unitCfg[state.type].units.find(u=>u.id===state.unit);
+
       if(state.type === 'area'){
-        const toM2 = unitCfg.area.units.find(u=>u.id===state.unit).toM2 || (v=>v);
-        const m2 = toM2(state.value);
+        const m2 = cfgUnit.toBase(state.value);
         for(const c of comparisons.area){
           const n = m2 / c.area_m2; res.push(`≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
         }
       }
       if(state.type === 'flow'){
-        const toM3s = unitCfg.flow.units.find(u=>u.id===state.unit).toM3s || (v=>v);
+        const m3s = cfgUnit.toBase(state.value);
+        for(const c of comparisons.flow){
+          if(c.timeScale === 'min'){
+            const perMin = m3s*60 / c.volume_m3; res.push(`≈ <b>${fmt(perMin)}</b> ${c.label}`);
+          } else {
+            const perSec = m3s / c.volume_m3; res.push(`≈ <b>${fmt(perSec)}</b> ${c.label}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
+          }
+        }
+      }
+      if(state.type === 'length'){
+        const m = cfgUnit.toBase(state.value);
+        for(const c of comparisons.length){
+          const n = m / c.length_m; res.push(`≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}`);
+        }
+      }
+
+      document.getElementById('resultBox').innerHTML = res.map(r=>`<div>${r}</div>`).join('');
+      document.getElementById('examplesNote').textContent = unitCfg[state.type].examples;
+      document.getElementById('resultHeading').textContent = `Comparisons for ${state.type} at ${fmt(state.value)} ${document.getElementById('unitReadout').textContent}`;
+    }</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}${c.note? ` <span class=\"small muted\">— ${c.note}</span>`:''}`);
+        }
+      }
+      if(state.type === 'flow'){
+        const toM3s = unitCfg.flow.units.find(u=>u.id===state.unit).toM3s;
         const m3s = toM3s(state.value);
         for(const c of comparisons.flow){
           if(c.timeScale === 'min'){
@@ -188,7 +201,7 @@
         }
       }
       if(state.type === 'length'){
-        const toM = unitCfg.length.units.find(u=>u.id===state.unit).toM || (v=>v);
+        const toM = unitCfg.length.units.find(u=>u.id===state.unit).toM;
         const m = toM(state.value);
         for(const c of comparisons.length){
           const n = m / c.length_m; res.push(`≈ <b>${fmt(n)}</b> ${c.label}${c.approx? ' <span class=\"small muted\">(approx)</span>':''}`);
@@ -200,16 +213,14 @@
       document.getElementById('resultHeading').textContent = `Comparisons for ${state.type} at ${fmt(state.value)} ${document.getElementById('unitReadout').textContent}`;
     }
 
-    // --- EVENT WIRING ---
     const typeSelect = document.getElementById('typeSelect');
     const unitSelect = document.getElementById('unitSelect');
     const slider = document.getElementById('valueSlider');
 
     typeSelect.addEventListener('change', () => {
       state.type = typeSelect.value;
-      // set default unit per type
       state.unit = unitCfg[state.type].units[0].id;
-      state.value = unitCfg[state.type].units[0].slider.start;
+      state.value = null;
       populateUnits();
       applySliderPreset();
       render();
@@ -217,8 +228,7 @@
 
     unitSelect.addEventListener('change', () => {
       state.unit = unitSelect.value;
-      // reset value to a sensible start for the new unit
-      state.value = unitCfg[state.type].units.find(u=>u.id===state.unit).slider.start;
+      state.value = null;
       applySliderPreset();
       render();
     });
@@ -229,7 +239,6 @@
       render();
     });
 
-    // --- INIT ---
     populateUnits();
     applySliderPreset();
     render();
