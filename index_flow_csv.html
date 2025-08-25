@@ -1,216 +1,252 @@
-<script>
-  /********* CONFIG *********/
-  // Si tu CSV está en otra carpeta, ajusta la ruta:
-  const CSV_URL = 'flow_rivers.csv?v=20250826'; // cambia el número cuando actualices el CSV
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Measure Mapper · Flow-only (CSV)</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg,#0b1020,#0d1630); color: var(--ink); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: clamp(28px, 4vw, 44px); margin: 0 0 8px; letter-spacing: -0.02em; }
+    p.lead { color: var(--muted); margin: 0 0 18px; }
+    .card { background: linear-gradient(180deg,#111a34,#0e1730); border: 1px solid #1f2a4a; border-radius: 16px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .row { display:flex; gap:10px; align-items: center; }
+    .row > * { flex: 1; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    select { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid #2a375f; background: #0c1530; color: var(--ink); outline: none; }
+    select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(110,231,255,.15); }
 
-  /********* UTILIDADES *********/
-  const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
-  function niceStep(x){ if(x<=0) return 1; const k=Math.floor(Math.log10(x)); const b=x/10**k; const m=b<=1?1:b<=2?2:b<=5?5:10; return m*10**k; }
+    .slider-row { display:flex; align-items:center; gap:14px; }
+    input[type="range"] { flex: 1; appearance: none; height: 6px; background: #1a2546; border-radius: 999px; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid #0a132b; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+    input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid #0a132b; }
 
-  // Detectar delimitador (",", ";" o tab) usando la cabecera
-  function detectDelimiter(headerLine){
-    const candidates = [',',';','\t'];
-    let best = ',', bestCount = 0;
-    for(const d of candidates){
-      const count = headerLine.split(d).length - 1;
-      if(count > bestCount){ bestCount = count; best = d; }
-    }
-    return best;
-  }
+    .value-pill { min-width: 180px; text-align: right; font-variant-numeric: tabular-nums; }
+    .value-pill b { font-size: 18px; }
+    .muted { color: var(--muted); }
 
-  // Parser robusto: BOM, comillas, \r\n, delimitador variable
-  function parseCSV(text){
-    if (!text) return [];
-    // Quitar BOM
-    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    .result { margin-top: 14px; font-size: 14px; line-height: 1.5; }
+    .small { font-size: 12px; }
+    .hr { height: 1px; background: #1f2a4a; margin: 16px 0; border: 0; }
 
-    // Tomar primera línea para detectar delimitador
-    const firstNL = text.indexOf('\n');
-    const firstLine = firstNL >= 0 ? text.slice(0, firstNL) : text;
-    const DELIM = detectDelimiter(firstLine);
+    .river-card { display:flex; gap:14px; align-items:center; }
+    .river-thumb { width:128px; height:80px; overflow:hidden; border-radius:10px; background:#0b213d; border:1px solid #1f365c; flex:0 0 128px; display:flex; align-items:center; justify-content:center; }
+    .river-thumb img { width:100%; height:100%; object-fit:cover; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Flow (m³/s) <span class="small muted">· datos desde CSV</span></h1>
+    <p class="lead">Usa el slider para fijar un caudal. El sistema busca en tu <b>archivo CSV</b> (editable en Excel) el río que corresponde al <b>rango</b> del zoom actual.</p>
 
-    const rows = [];
-    let cur = [], field = '', inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (c === '"') {
-        if (inQuotes && text[i+1] === '"') { field += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (c === DELIM && !inQuotes) {
-        cur.push(field); field = '';
-      } else if ((c === '\n' || c === '\r') && !inQuotes) {
-        if (c === '\r' && text[i+1] === '\n') i++;
-        cur.push(field); rows.push(cur); cur = []; field = '';
-      } else {
-        field += c;
-      }
-    }
-    if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
-
-    if (!rows.length) return [];
-    const headers = rows.shift().map(h => (h ?? '').trim());
-    return rows
-      .filter(r => r.length && r.some(x => x && String(x).trim() !== ''))
-      .map(r => {
-        const obj = {};
-        headers.forEach((h, idx) => obj[h] = ((r[idx] ?? '') + '').trim());
-        return obj;
-      });
-  }
-
-  /********* ESTADO *********/
-  let DB = { byScale: new Map(), scales: [] };
-
-  /********* CARGA CSV *********/
-  async function loadCSV(){
-    // Aviso si se abre local (file://) — fetch suele fallar
-    if (location.protocol === 'file:') {
-      throw new Error('Este archivo se abrió con file:// — usa un servidor local (p.ej., python -m http.server) o publícalo en GitHub Pages.');
-    }
-
-    const res = await fetch(CSV_URL, { cache: 'no-store' });
-    if (!res.ok) {
-      throw new Error(`No se pudo cargar ${CSV_URL} (HTTP ${res.status})`);
-    }
-    const txt = await res.text();
-
-    const rows = parseCSV(txt);
-    if (!rows.length) {
-      throw new Error('El CSV se cargó pero no se detectaron filas. Revisa delimitador, encabezados y líneas.');
-    }
-
-    // Validar encabezados requeridos
-    const required = ['Scale','Name','Value','Value range','Description'];
-    const missing = required.filter(h => !(h in rows[0]));
-    if (missing.length) {
-      throw new Error(`Faltan encabezados en el CSV: ${missing.join(', ')}`);
-    }
-
-    const byScale = new Map();
-    for (const row of rows){
-      const scale = row['Scale'];
-      const name = row['Name'];
-      const value = parseFloat(row['Value']);
-      const rangeStr = row['Value range'];
-      const desc = row['Description'];
-      if(!scale || !name || !rangeStr) continue;
-      const m = rangeStr.match(/^(\d+(?:[\.,]\d+)?)\s*-\s*(\d+(?:[\.,]\d+)?)/);
-      if(!m) continue;
-      const rmin = parseFloat(String(m[1]).replace(',','.'));
-      const rmax = parseFloat(String(m[2]).replace(',','.'));
-      const item = { scale, name, value, rmin, rmax, desc };
-      if(!byScale.has(scale)) byScale.set(scale, []);
-      byScale.get(scale).push(item);
-    }
-
-    for (const [scale, arr] of byScale){
-      arr.sort((a,b)=> a.rmin - b.rmin);
-      arr.forEach((it, i)=> it.slot = i+1);
-    }
-
-    DB.byScale = byScale;
-    DB.scales = Array.from(byScale.keys());
-
-    // Logs de depuración (abre la consola)
-    console.log('CSV cargado:', { escalas: DB.scales, ejemplo: rows.slice(0,3) });
-  }
-
-  /********* UI *********/
-  function populateZooms(){
-    const zSel = document.getElementById('zoomSelect');
-    zSel.innerHTML = '';
-    for(const z of DB.scales){
-      const opt = document.createElement('option');
-      opt.value = z; opt.textContent = z;
-      zSel.appendChild(opt);
-    }
-  }
-
-  function setSliderToScale(scale){
-    const items = DB.byScale.get(scale) || [];
-    const mins = items.map(x=>x.rmin);
-    const maxs = items.map(x=>x.rmax);
-    if(!mins.length || !maxs.length){ return; }
-    const min = Math.min(...mins);
-    const max = Math.max(...maxs);
-    const slider = document.getElementById('valueSlider');
-    const step = niceStep((max-min)/200);
-    slider.min = min; slider.max = max; slider.step = step;
-    if(parseFloat(slider.value) < min || parseFloat(slider.value) > max){
-      slider.value = min;
-    }
-    document.getElementById('rangeReadout').textContent = `Rango del zoom → ${fmt(min)} – ${fmt(max)} m³/s (step ${fmt(step)})`;
-    document.getElementById('valueReadout').textContent = fmt(parseFloat(slider.value));
-  }
-
-  function findMatch(scale, value){
-    const items = DB.byScale.get(scale) || [];
-    let match = items.find(x => value >= x.rmin && value <= x.rmax);
-    if(match) return match;
-    // si no cae justo, elegir el rango más cercano por distancia al centro
-    let best=null, bestDist=Infinity;
-    for(const it of items){
-      const center = 0.5*(it.rmin+it.rmax);
-      const d = Math.abs(value-center);
-      if(d < bestDist){ best=it; bestDist=d; }
-    }
-    return best;
-  }
-
-  function render(){
-    const scale = document.getElementById('zoomSelect').value;
-    const val = parseFloat(document.getElementById('valueSlider').value);
-    const m = findMatch(scale, val);
-    const box = document.getElementById('resultBox');
-    if(!m){
-      box.innerHTML = '<span class="small muted">Sin datos para este zoom.</span>';
-      document.getElementById('resultHeading').textContent = `Zoom: ${scale || '—'} · Caudal: ${isFinite(val)? fmt(val): '—'} m³/s`;
-      return;
-    }
-    box.innerHTML = `
-      <div class="river-card">
-        <div class="river-thumb"> <span class="small muted">(imagen opcional)</span> </div>
+    <!-- CONTROLES: ZOOM -->
+    <section class="card" style="margin-bottom:16px;">
+      <div class="row" style="margin-bottom:10px;">
         <div>
-          <div><b>${m.name}</b> <span class="small muted">· Slot ${m.slot ?? '?'} / ${DB.byScale.get(scale)?.length || '?'}</span></div>
-          <div class="small muted">Rango: ${fmt(m.rmin)} – ${fmt(m.rmax)} m³/s · Valor ref: ${isFinite(m.value)? fmt(m.value): '—'} m³/s</div>
-          <div style="margin-top:6px;">${m.desc || ''}</div>
+          <label>Zoom / Escala (desde CSV)</label>
+          <select id="zoomSelect"></select>
         </div>
-      </div>`;
-    document.getElementById('resultHeading').textContent = `Zoom: ${scale} · Caudal: ${fmt(val)} m³/s`;
-  }
+      </div>
+      <div class="hr"></div>
+      <div>
+        <label class="muted">Caudal</label>
+        <div class="slider-row">
+          <input id="valueSlider" type="range" min="0" max="1000" step="1" value="100" />
+          <div class="value-pill"><b id="valueReadout">100</b> <span>m³/s</span></div>
+        </div>
+        <div class="small muted" id="rangeReadout" style="margin-top:6px;"></div>
+      </div>
+    </section>
 
-  // Eventos
-  document.getElementById('zoomSelect').addEventListener('change', ()=>{
-    setSliderToScale(zoomSelect.value);
-    render();
-  });
-  document.getElementById('valueSlider').addEventListener('input', ()=>{
-    document.getElementById('valueReadout').textContent = fmt(parseFloat(valueSlider.value));
-    render();
-  });
+    <!-- RESULTADO -->
+    <section class="card">
+      <div id="resultHeading" class="small muted" style="margin-bottom:8px;">Resultado</div>
+      <div id="resultBox" class="result"></div>
+      <div id="examplesNote" class="small muted" style="margin-top:10px;">Fuente: <code>flow_rivers.csv</code> en este repositorio.</div>
+    </section>
 
-  // Init
-  (async function init(){
-    try{
-      await loadCSV();
-      populateZooms();
-      if(DB.scales.length){
-        document.getElementById('zoomSelect').value = DB.scales[0];
-        setSliderToScale(DB.scales[0]);
-      } else {
-        document.getElementById('resultBox').innerHTML = '<span class="small muted">CSV cargado pero no hay escalas. ¿Encabezados correctos? ¿Delimitador correcto?</span>';
+    <!-- Ayuda para crear el CSV -->
+    <section class="card" style="margin-top:16px;">
+      <details>
+        <summary class="small">¿Cómo debe verse el CSV? (ejemplo)</summary>
+        <pre class="small" style="white-space:pre-wrap;">Scale,Name,Value,Value range,Description
+River,Po,1500,1500-1999,Río más largo de Italia; crecidas en primavera.
+River,Ebro,600,500-699,Regulado por embalses; caudal medio anual ~600 m³/s.
+River,Ródano,1800,1700-1899,Desde el Ródano superior hasta el Mediterráneo.
+Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
+...</pre>
+        <p class="small muted">Guarda como <b>CSV UTF-8</b> (separado por comas) con encabezados exactamente: <code>Scale,Name,Value,Value range,Description</code>. Coloca el archivo junto a este <code>index.html</code> con nombre <code>flow_rivers.csv</code>.</p>
+      </details>
+    </section>
+  </div>
+
+  <script>
+    // --- Utilidades ---
+    const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
+    function niceStep(x){ if(x<=0) return 1; const k=Math.floor(Math.log10(x)); const b=x/10**k; const m=b<=1?1:b<=2?2:b<=5?5:10; return m*10**k; }
+
+    // CSV parser robusto: maneja comillas dobles, \r\n y BOM
+    function parseCSV(text){
+      // Quitar BOM si existe
+      if (text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+      const rows = [];
+      let cur = [], field = '', inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          if (inQuotes && text[i+1] === '"') { field += '"'; i++; } // escape ""
+          else inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          cur.push(field); field = '';
+        } else if ((c === '\n' || c === '\r') && !inQuotes) {
+          // consumir \r\n
+          if (c === '\r' && text[i+1] === '\n') i++;
+          cur.push(field); rows.push(cur); cur = []; field = '';
+        } else {
+          field += c;
+        }
       }
-      render();
+      if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
 
-      // Test rápido en consola
-      fetch(CSV_URL, { cache: 'no-store' }).then(r=>r.text()).then(t=>{
-        const preview = t.split('\n').slice(0,5).join('\n');
-        console.log('Preview CSV (primeras líneas):\n' + preview);
-      }).catch(e=>console.warn('No se pudo leer preview del CSV:', e));
-
-    }catch(e){
-      document.getElementById('resultBox').innerHTML = `<span class="small muted">${e.message}</span>`;
-      console.error(e);
+      if (!rows.length) return [];
+      const headers = rows.shift().map(h => (h ?? '').trim());
+      return rows
+        .filter(r => r.length && r.some(x => x && String(x).trim() !== ''))
+        .map(r => {
+          const obj = {};
+          headers.forEach((h, idx) => obj[h] = ((r[idx] ?? '') + '').trim());
+          return obj;
+        });
     }
-  })();
-</script>
+
+    // Estructura en memoria
+    let DB = { byScale: new Map(), scales: [] };
+
+    async function loadCSV(){
+      // Sugerencia: añade ?v=20250826 para evitar cache agresivo en cambios
+      const url = 'flow_rivers.csv?v=20250826';
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('No se pudo cargar flow_rivers.csv');
+      const txt = await res.text();
+      const rows = parseCSV(txt);
+
+      // console.log('Filas CSV:', rows.length, rows.slice(0,3)); // debug opcional
+
+      const byScale = new Map();
+      for (const row of rows){
+        const scale = row['Scale'];
+        const name = row['Name'];
+        const value = parseFloat(row['Value']);
+        const rangeStr = row['Value range'];
+        const desc = row['Description'];
+        if(!scale || !name || !rangeStr) continue;
+        const m = rangeStr.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+        if(!m) continue;
+        const rmin = parseFloat(m[1]);
+        const rmax = parseFloat(m[2]);
+        const item = { scale, name, value, rmin, rmax, desc };
+        if(!byScale.has(scale)) byScale.set(scale, []);
+        byScale.get(scale).push(item);
+      }
+      // ordenar por rmin y numerar 1..20
+      for (const [scale, arr] of byScale){
+        arr.sort((a,b)=> a.rmin - b.rmin);
+        arr.forEach((it, i)=> it.slot = i+1);
+      }
+      DB.byScale = byScale;
+      DB.scales = Array.from(byScale.keys());
+    }
+
+    function populateZooms(){
+      const zSel = document.getElementById('zoomSelect');
+      zSel.innerHTML = '';
+      for(const z of DB.scales){
+        const opt = document.createElement('option');
+        opt.value = z; opt.textContent = z;
+        zSel.appendChild(opt);
+      }
+    }
+
+    function setSliderToScale(scale){
+      const items = DB.byScale.get(scale) || [];
+      const mins = items.map(x=>x.rmin);
+      const maxs = items.map(x=>x.rmax);
+      if(!mins.length || !maxs.length){ return; }
+      const min = Math.min(...mins);
+      const max = Math.max(...maxs);
+      const slider = document.getElementById('valueSlider');
+      const step = niceStep((max-min)/200);
+      slider.min = min; slider.max = max; slider.step = step;
+      if(parseFloat(slider.value) < min || parseFloat(slider.value) > max){
+        slider.value = min;
+      }
+      document.getElementById('rangeReadout').textContent = `Rango del zoom → ${fmt(min)} – ${fmt(max)} m³/s (step ${fmt(step)})`;
+      document.getElementById('valueReadout').textContent = fmt(parseFloat(slider.value));
+    }
+
+    function findMatch(scale, value){
+      const items = DB.byScale.get(scale) || [];
+      let match = items.find(x => value >= x.rmin && value <= x.rmax);
+      if(match) return match;
+      // si no cae justo, elegir el rango más cercano por distancia al centro
+      let best=null, bestDist=Infinity;
+      for(const it of items){
+        const center = 0.5*(it.rmin+it.rmax);
+        const d = Math.abs(value-center);
+        if(d < bestDist){ best=it; bestDist=d; }
+      }
+      return best;
+    }
+
+    function render(){
+      const scale = document.getElementById('zoomSelect').value;
+      const val = parseFloat(document.getElementById('valueSlider').value);
+      const m = findMatch(scale, val);
+      const box = document.getElementById('resultBox');
+      if(!m){
+        box.innerHTML = '<span class="small muted">Sin datos para este zoom.</span>';
+        document.getElementById('resultHeading').textContent = `Zoom: ${scale || '—'} · Caudal: ${isFinite(val)? fmt(val): '—'} m³/s`;
+        return;
+      }
+      box.innerHTML = `
+        <div class="river-card">
+          <div class="river-thumb"> <span class="small muted">(imagen opcional)</span> </div>
+          <div>
+            <div><b>${m.name}</b> <span class="small muted">· Slot ${m.slot ?? '?'} / ${DB.byScale.get(scale)?.length || '?'}</span></div>
+            <div class="small muted">Rango: ${fmt(m.rmin)} – ${fmt(m.rmax)} m³/s · Valor ref: ${isFinite(m.value)? fmt(m.value): '—'} m³/s</div>
+            <div style="margin-top:6px;">${m.desc || ''}</div>
+          </div>
+        </div>`;
+      document.getElementById('resultHeading').textContent = `Zoom: ${scale} · Caudal: ${fmt(val)} m³/s`;
+    }
+
+    // Eventos
+    document.getElementById('zoomSelect').addEventListener('change', ()=>{
+      setSliderToScale(zoomSelect.value);
+      render();
+    });
+    document.getElementById('valueSlider').addEventListener('input', ()=>{
+      document.getElementById('valueReadout').textContent = fmt(parseFloat(valueSlider.value));
+      render();
+    });
+
+    // Init
+    (async function init(){
+      try{
+        await loadCSV();
+        populateZooms();
+        if(DB.scales.length){
+          document.getElementById('zoomSelect').value = DB.scales[0];
+          setSliderToScale(DB.scales[0]);
+        }
+        render();
+      }catch(e){
+        document.getElementById('resultBox').innerHTML = '<span class="small muted">No se pudo cargar <code>flow_rivers.csv</code>. Asegúrate de subirlo junto a este archivo y de que tenga los encabezados correctos.</span>';
+      }
+    })();
+  </script>
+</body>
+</html>
