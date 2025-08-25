@@ -97,8 +97,7 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
           if(inQuotes && text[i+1]==='"'){ field+='"'; i++; }
           else inQuotes = !inQuotes;
         } else if(c===',' && !inQuotes){ cur.push(field); field=''; }
-        else if((c==='
-' || c==='') && !inQuotes){ if(field!==''||cur.length){ cur.push(field); rows.push(cur); cur=[]; field=''; } }
+        else if((c==='' || c==='') && !inQuotes){ if(field!==''||cur.length){ cur.push(field); rows.push(cur); cur=[]; field=''; } }
         else { field+=c; }
       }
       if(field!==''||cur.length){ cur.push(field); rows.push(cur); }
