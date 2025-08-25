@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Measure Mapper · Flow-only v4 (CSV)</title>
+  <title>Measure Mapper · Flow-only (CSV)</title>
   <style>
     :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
     * { box-sizing: border-box; }
@@ -87,41 +87,56 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
     const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
     function niceStep(x){ if(x<=0) return 1; const k=Math.floor(Math.log10(x)); const b=x/10**k; const m=b<=1?1:b<=2?2:b<=5?5:10; return m*10**k; }
 
-    // CSV parser simple con soporte de comillas
+    // CSV parser robusto: maneja comillas dobles, \r\n y BOM
     function parseCSV(text){
+      // Quitar BOM si existe
+      if (text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
       const rows = [];
-      let cur = [], field = '', inQuotes = false; 
-      for(let i=0;i<text.length;i++){
+      let cur = [], field = '', inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
         const c = text[i];
-        if(c==='"'){
-          if(inQuotes && text[i+1]==='"'){ field+='"'; i++; }
+        if (c === '"') {
+          if (inQuotes && text[i+1] === '"') { field += '"'; i++; } // escape ""
           else inQuotes = !inQuotes;
-        } else if(c===',' && !inQuotes){ cur.push(field); field=''; }
-        else if((c==='' || c==='') && !inQuotes){ if(field!==''||cur.length){ cur.push(field); rows.push(cur); cur=[]; field=''; } }
-        else { field+=c; }
+        } else if (c === ',' && !inQuotes) {
+          cur.push(field); field = '';
+        } else if ((c === '\n' || c === '\r') && !inQuotes) {
+          // consumir \r\n
+          if (c === '\r' && text[i+1] === '\n') i++;
+          cur.push(field); rows.push(cur); cur = []; field = '';
+        } else {
+          field += c;
+        }
       }
-      if(field!==''||cur.length){ cur.push(field); rows.push(cur); }
-      // headers
-      const headers = rows.shift().map(h=>h.trim());
-      return rows.filter(r=>r.length).map(r=>{
-        const obj={};
-        headers.forEach((h,idx)=> obj[h] = (r[idx]||'').trim());
-        return obj;
-      });
+      if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
+
+      if (!rows.length) return [];
+      const headers = rows.shift().map(h => (h ?? '').trim());
+      return rows
+        .filter(r => r.length && r.some(x => x && String(x).trim() !== ''))
+        .map(r => {
+          const obj = {};
+          headers.forEach((h, idx) => obj[h] = ((r[idx] ?? '') + '').trim());
+          return obj;
+        });
     }
 
     // Estructura en memoria
     let DB = { byScale: new Map(), scales: [] };
 
     async function loadCSV(){
-      const url = 'flow_rivers.csv'; // debe existir junto a este HTML
+      // Sugerencia: añade ?v=20250826 para evitar cache agresivo en cambios
+      const url = 'flow_rivers.csv?v=20250826';
       const res = await fetch(url);
       if(!res.ok) throw new Error('No se pudo cargar flow_rivers.csv');
       const txt = await res.text();
       const rows = parseCSV(txt);
 
+      // console.log('Filas CSV:', rows.length, rows.slice(0,3)); // debug opcional
+
       const byScale = new Map();
-      for(const row of rows){
+      for (const row of rows){
         const scale = row['Scale'];
         const name = row['Name'];
         const value = parseFloat(row['Value']);
@@ -137,7 +152,7 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
         byScale.get(scale).push(item);
       }
       // ordenar por rmin y numerar 1..20
-      for(const [scale, arr] of byScale){
+      for (const [scale, arr] of byScale){
         arr.sort((a,b)=> a.rmin - b.rmin);
         arr.forEach((it, i)=> it.slot = i+1);
       }
@@ -164,7 +179,7 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
       const max = Math.max(...maxs);
       const slider = document.getElementById('valueSlider');
       const step = niceStep((max-min)/200);
-      slider.min = min; slider.max = max; slider.step = step; 
+      slider.min = min; slider.max = max; slider.step = step;
       if(parseFloat(slider.value) < min || parseFloat(slider.value) > max){
         slider.value = min;
       }
@@ -191,7 +206,11 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
       const val = parseFloat(document.getElementById('valueSlider').value);
       const m = findMatch(scale, val);
       const box = document.getElementById('resultBox');
-      if(!m){ box.innerHTML = '<span class="small muted">Sin datos para este zoom.</span>'; return; }
+      if(!m){
+        box.innerHTML = '<span class="small muted">Sin datos para este zoom.</span>';
+        document.getElementById('resultHeading').textContent = `Zoom: ${scale || '—'} · Caudal: ${isFinite(val)? fmt(val): '—'} m³/s`;
+        return;
+      }
       box.innerHTML = `
         <div class="river-card">
           <div class="river-thumb"> <span class="small muted">(imagen opcional)</span> </div>
@@ -205,20 +224,30 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa.
     }
 
     // Eventos
-    document.getElementById('zoomSelect').addEventListener('change', ()=>{ setSliderToScale(zoomSelect.value); render(); });
-    document.getElementById('valueSlider').addEventListener('input', ()=>{ document.getElementById('valueReadout').textContent = fmt(parseFloat(valueSlider.value)); render(); });
+    document.getElementById('zoomSelect').addEventListener('change', ()=>{
+      setSliderToScale(zoomSelect.value);
+      render();
+    });
+    document.getElementById('valueSlider').addEventListener('input', ()=>{
+      document.getElementById('valueReadout').textContent = fmt(parseFloat(valueSlider.value));
+      render();
+    });
 
     // Init
     (async function init(){
       try{
         await loadCSV();
         populateZooms();
-        if(DB.scales.length){ document.getElementById('zoomSelect').value = DB.scales[0]; setSliderToScale(DB.scales[0]); }
+        if(DB.scales.length){
+          document.getElementById('zoomSelect').value = DB.scales[0];
+          setSliderToScale(DB.scales[0]);
+        }
         render();
       }catch(e){
-        document.getElementById('resultBox').innerHTML = '<span class="small muted">No se pudo cargar flow_rivers.csv. Asegúrate de subirlo junto a este archivo.</span>';
+        document.getElementById('resultBox').innerHTML = '<span class="small muted">No se pudo cargar <code>flow_rivers.csv</code>. Asegúrate de subirlo junto a este archivo y de que tenga los encabezados correctos.</span>';
       }
     })();
   </script>
 </body>
 </html>
+
