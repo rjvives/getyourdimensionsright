@@ -212,8 +212,8 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chi
         return;
       }
       box.innerHTML = `
-        <div class="river-card">
-          <div class="river-thumb"> <span class="small muted">(imagen opcional)</span> </div>
+        <div class="river-thumb">
+          ${m.Image ? `<img src="${m.Image}" alt="${m.Name}">` : `<span class="small muted">(sin imagen)</span>`}</div>
           <div>
             <div><b>${m.name}</b> <span class="small muted">· Slot ${m.slot ?? '?'} / ${DB.byScale.get(scale)?.length || '?'}</span></div>
             <div class="small muted">Rango: ${fmt(m.rmin)} – ${fmt(m.rmax)} m³/s · Valor ref: ${isFinite(m.value)? fmt(m.value): '—'} m³/s</div>
