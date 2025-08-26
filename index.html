@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Measure Mapper · Flow-only (CSV)</title>
+  <title>Measure Mapper · Flow-only (CSV + Image)</title>
   <style>
     :root { --bg:#0b1020; --card:#121a36; --ink:#e6edf7; --muted:#93a4c6; --accent:#6ee7ff; }
     * { box-sizing: border-box; }
@@ -39,9 +39,8 @@
 <body>
   <div class="wrap">
     <h1>Flow (m³/s) <span class="small muted">· datos desde CSV</span></h1>
-    <p class="lead">Usa el slider para fijar un caudal. El sistema busca en tu <b>archivo CSV</b> (editable en Excel) el río que corresponde al <b>rango</b> del zoom actual.</p>
+    <p class="lead">Usa el slider para fijar un caudal. El sistema busca en tu <b>CSV</b> el río del <b>rango</b> de la escala seleccionada.</p>
 
-    <!-- CONTROLES: ZOOM -->
     <section class="card" style="margin-bottom:16px;">
       <div class="row" style="margin-bottom:10px;">
         <div>
@@ -60,106 +59,127 @@
       </div>
     </section>
 
-    <!-- RESULTADO -->
     <section class="card">
       <div id="resultHeading" class="small muted" style="margin-bottom:8px;">Resultado</div>
       <div id="resultBox" class="result"></div>
-      <div id="examplesNote" class="small muted" style="margin-top:10px;">Fuente: <code>flow_rivers.csv</code> en este repositorio.</div>
+      <div class="small muted" style="margin-top:10px;">Fuente: <code>flow_rivers.csv</code> junto a este archivo (encabezados: <code>Scale,Name,Value,Value range,Description,Image</code>).</div>
     </section>
 
-    <!-- Ayuda para crear el CSV -->
     <section class="card" style="margin-top:16px;">
       <details>
-        <summary class="small">¿Cómo debe verse el CSV? (ejemplo)</summary>
-        <pre class="small" style="white-space:pre-wrap;">Scale,Name,Value,Value range,Description
-River,Po,1500,1500-1999,Río más largo de Italia; crecidas en primavera.
-River,Ebro,600,500-699,Regulado por embalses; caudal medio anual ~600 m³/s.
-River,Ródano,1800,1700-1899,Desde el Ródano superior hasta el Mediterráneo.
-Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chini chini.
-...</pre>
-        <p class="small muted">Guarda como <b>CSV UTF-8</b> (separado por comas) con encabezados exactamente: <code>Scale,Name,Value,Value range,Description</code>. Coloca el archivo junto a este <code>index.html</code> con nombre <code>flow_rivers.csv</code>.</p>
+        <summary class="small">Ejemplo de CSV</summary>
+        <pre class="small" style="white-space:pre-wrap;">Scale,Name,Value,Value range,Description,Image
+River,Po,1500,1500-1999,Río más largo de Italia; crecidas en primavera,https://upload.wikimedia.org/wikipedia/commons/f/f3/Po_river_Turin.jpg
+River,Ebro,600,500-699,Regulado por embalses; caudal medio anual ~600 m³/s,https://upload.wikimedia.org/wikipedia/commons/5/5f/Ebro_River.jpg
+River,Ródano,1800,1700-1899,Desde el Ródano superior hasta el Mediterráneo,https://upload.wikimedia.org/wikipedia/commons/9/9e/Rh%C3%B4ne_in_Lyon.jpg
+Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; aguas turquesa,https://upload.wikimedia.org/wikipedia/commons/4/4f/Futaleufu_river.jpg
+</pre>
       </details>
     </section>
   </div>
 
   <script>
-    // --- Utilidades ---
+    /********* CONFIG *********/
+    const CSV_URL = 'flow_rivers.csv?v=20250826'; // cambia el número para bustear caché cuando edites
+
+    /********* UTILIDADES *********/
     const fmt = (n) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
     function niceStep(x){ if(x<=0) return 1; const k=Math.floor(Math.log10(x)); const b=x/10**k; const m=b<=1?1:b<=2?2:b<=5?5:10; return m*10**k; }
 
-    // CSV parser robusto: maneja comillas dobles, \r\n y BOM
+    function detectDelimiter(headerLine){
+      const candidates = [',',';','\t'];
+      let best=',', bestCount=0;
+      for(const d of candidates){
+        const c = headerLine.split(d).length-1;
+        if(c>bestCount){ best=d; bestCount=c; }
+      }
+      return best;
+    }
+
+    // CSV parser robusto: BOM, comillas, \r\n y delimitador variable
     function parseCSV(text){
-      // Quitar BOM si existe
-      if (text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      if(!text) return [];
+      if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // BOM
+      const firstNL = text.indexOf('\n');
+      const firstLine = firstNL >= 0 ? text.slice(0, firstNL) : text;
+      const DELIM = detectDelimiter(firstLine);
 
       const rows = [];
-      let cur = [], field = '', inQuotes = false;
-      for (let i = 0; i < text.length; i++) {
+      let cur=[], field='', inQuotes=false;
+      for(let i=0;i<text.length;i++){
         const c = text[i];
-        if (c === '"') {
-          if (inQuotes && text[i+1] === '"') { field += '"'; i++; } // escape ""
+        if(c === '"'){
+          if(inQuotes && text[i+1] === '"'){ field+='"'; i++; }
           else inQuotes = !inQuotes;
-        } else if (c === ',' && !inQuotes) {
-          cur.push(field); field = '';
-        } else if ((c === '\n' || c === '\r') && !inQuotes) {
-          // consumir \r\n
-          if (c === '\r' && text[i+1] === '\n') i++;
-          cur.push(field); rows.push(cur); cur = []; field = '';
+        } else if(c === DELIM && !inQuotes){
+          cur.push(field); field='';
+        } else if((c === '\n' || c === '\r') && !inQuotes){
+          if(c === '\r' && text[i+1] === '\n') i++;
+          cur.push(field); rows.push(cur); cur=[]; field='';
         } else {
           field += c;
         }
       }
-      if (field !== '' || cur.length) { cur.push(field); rows.push(cur); }
+      if(field !== '' || cur.length){ cur.push(field); rows.push(cur); }
 
-      if (!rows.length) return [];
+      if(!rows.length) return [];
       const headers = rows.shift().map(h => (h ?? '').trim());
       return rows
         .filter(r => r.length && r.some(x => x && String(x).trim() !== ''))
         .map(r => {
-          const obj = {};
-          headers.forEach((h, idx) => obj[h] = ((r[idx] ?? '') + '').trim());
+          const obj={};
+          headers.forEach((h,idx)=> obj[h] = ((r[idx] ?? '') + '').trim());
           return obj;
         });
     }
 
-    // Estructura en memoria
+    /********* ESTADO *********/
     let DB = { byScale: new Map(), scales: [] };
 
+    /********* CARGA CSV *********/
     async function loadCSV(){
-      // Sugerencia: añade ?v=20250826 para evitar cache agresivo en cambios
-      const url = 'flow_rivers.csv?v=20250826';
-      const res = await fetch(url);
-      if(!res.ok) throw new Error('No se pudo cargar flow_rivers.csv');
+      if(location.protocol === 'file:'){
+        throw new Error('Abriste con file:// — usa un servidor local (p.ej. python -m http.server) o GitHub Pages.');
+      }
+      const res = await fetch(CSV_URL, { cache:'no-store' });
+      if(!res.ok) throw new Error(`No se pudo cargar ${CSV_URL} (HTTP ${res.status})`);
       const txt = await res.text();
       const rows = parseCSV(txt);
+      if(!rows.length) throw new Error('CSV vacío o mal formateado (ver delimitador, comillas y encabezados).');
 
-      // console.log('Filas CSV:', rows.length, rows.slice(0,3)); // debug opcional
+      const required = ['Scale','Name','Value','Value range','Description']; // Image es opcional
+      const missing = required.filter(h => !(h in rows[0]));
+      if(missing.length) throw new Error('Faltan encabezados: ' + missing.join(', '));
 
       const byScale = new Map();
-      for (const row of rows){
+      for(const row of rows){
         const scale = row['Scale'];
         const name = row['Name'];
-        const value = parseFloat(row['Value']);
+        const value = parseFloat(String(row['Value']).replace(',','.'));
         const rangeStr = row['Value range'];
         const desc = row['Description'];
+        const image = row['Image']; // opcional
         if(!scale || !name || !rangeStr) continue;
-        const m = rangeStr.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+        const m = rangeStr.match(/^(\d+(?:[\.,]\d+)?)\s*-\s*(\d+(?:[\.,]\d+)?)/);
         if(!m) continue;
-        const rmin = parseFloat(m[1]);
-        const rmax = parseFloat(m[2]);
-         const item = {scale, name, value, rmin, rmax, desc, image: row['Image'] };
+        const rmin = parseFloat(String(m[1]).replace(',','.'));
+        const rmax = parseFloat(String(m[2]).replace(',','.'));
+        const item = { scale, name, value, rmin, rmax, desc, image };
         if(!byScale.has(scale)) byScale.set(scale, []);
         byScale.get(scale).push(item);
       }
-      // ordenar por rmin y numerar 1..20
-      for (const [scale, arr] of byScale){
+
+      for(const [scale, arr] of byScale){
         arr.sort((a,b)=> a.rmin - b.rmin);
-        arr.forEach((it, i)=> it.slot = i+1);
+        arr.forEach((it,i)=> it.slot = i+1);
       }
       DB.byScale = byScale;
       DB.scales = Array.from(byScale.keys());
+
+      console.log('CSV OK → Escalas:', DB.scales);
     }
 
+    /********* UI *********/
     function populateZooms(){
       const zSel = document.getElementById('zoomSelect');
       zSel.innerHTML = '';
@@ -191,7 +211,6 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chi
       const items = DB.byScale.get(scale) || [];
       let match = items.find(x => value >= x.rmin && value <= x.rmax);
       if(match) return match;
-      // si no cae justo, elegir el rango más cercano por distancia al centro
       let best=null, bestDist=Infinity;
       for(const it of items){
         const center = 0.5*(it.rmin+it.rmax);
@@ -206,14 +225,19 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chi
       const val = parseFloat(document.getElementById('valueSlider').value);
       const m = findMatch(scale, val);
       const box = document.getElementById('resultBox');
+
       if(!m){
         box.innerHTML = '<span class="small muted">Sin datos para este zoom.</span>';
         document.getElementById('resultHeading').textContent = `Zoom: ${scale || '—'} · Caudal: ${isFinite(val)? fmt(val): '—'} m³/s`;
         return;
       }
+
       box.innerHTML = `
-        <div class="river-thumb">
-          ${m.Image ? `<img src="${m.Image}" alt="${m.Name}">` : `<span class="small muted">(sin imagen)</span>`}</div>
+        <div class="river-card">
+          <div class="river-thumb">
+            ${m.image ? `<img src="${m.image}" alt="${m.name}">`
+                      : `<span class="small muted">(sin imagen)</span>`}
+          </div>
           <div>
             <div><b>${m.name}</b> <span class="small muted">· Slot ${m.slot ?? '?'} / ${DB.byScale.get(scale)?.length || '?'}</span></div>
             <div class="small muted">Rango: ${fmt(m.rmin)} – ${fmt(m.rmax)} m³/s · Valor ref: ${isFinite(m.value)? fmt(m.value): '—'} m³/s</div>
@@ -241,10 +265,13 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chi
         if(DB.scales.length){
           document.getElementById('zoomSelect').value = DB.scales[0];
           setSliderToScale(DB.scales[0]);
+        } else {
+          document.getElementById('resultBox').innerHTML = '<span class="small muted">CSV cargado pero sin escalas. Revisa encabezados y filas.</span>';
         }
         render();
       }catch(e){
-        document.getElementById('resultBox').innerHTML = '<span class="small muted">No se pudo cargar <code>flow_rivers.csv</code>. Asegúrate de subirlo junto a este archivo y de que tenga los encabezados correctos.</span>';
+        document.getElementById('resultBox').innerHTML = `<span class="small muted">${e.message}</span>`;
+        console.error(e);
       }
     })();
   </script>
