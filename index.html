@@ -147,7 +147,7 @@ Hose/Small Creek,Futaleufú,550,500-550,Tramo chileno-argentino; Hogar de mi chi
         if(!m) continue;
         const rmin = parseFloat(m[1]);
         const rmax = parseFloat(m[2]);
-        const item = { scale, name, value, rmin, rmax, desc };
+         const item = {scale, name, value, rmin, rmax, desc, image: row['Image'] };
         if(!byScale.has(scale)) byScale.set(scale, []);
         byScale.get(scale).push(item);
       }
