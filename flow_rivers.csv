@@ -1,7 +1,13 @@
 Scale,Name,Value,Value range,Description,Image
-River,Ebro,600,500-699,Regulado por embalses,
-River,Po,1500,1500-1999,Río más largo de Italia,
-River,Ródano,1800,1700-1899,Desde el Ródano superior hasta el Mediterráneo.,
-Hose/Small Creek,Futaleufú,530,500-550,Tramo chileno,img/futaleufu_river.jpeg
-Hose/Small Creek,PRUEBA1,580,550-600,,
-Hose/Small Creek,PRUEBA2,630,600-650,,
+Big Rivers,Ebro,600,500-699,Regulado por embalses,
+Big Rivers,Po,1500,1500-1999,Río más largo de Italia,
+Big Rivers,Ródano,1800,1700-1899,Desde el Ródano superior hasta el Mediterráneo.,
+River,Futaleufú,530,500-550,Tramo chileno,img/futaleufu_river.jpeg
+River,PRUEBA1,580,550-600,texto prueba 1,img/1.jpg
+River,PRUEBA2,630,600-650,texto prueba 2,img/2.jpg
+River,PRUEBA3,680,650-700,texto prueba 3,img/3.jpg
+River,PRUEBA4,720,700-750,texto prueba 4,img/4.jpg
+River,PRUEBA5,780,750-800,texto prueba 5,img/5.jpg
+River,PRUEBA6,820,800-850,texto prueba 6,img/6.jpg
+River,PRUEBA7,880,850-900,texto prueba 7,img/7.jpg
+River,PRUEBA8,920,900-950,texto prueba 8,img/8.jpg
